@@ -30,6 +30,7 @@ class SentimentSpace:
         self.labeled_reviews = labeled_reviews
         self.word_key = 1
         self.vectorized_reviews = None
+        self.max_review_length = len(max(labeled_reviews, key=lambda r: len(r[0]))[0])
         self.create_space()
 
     def create_space(self):
@@ -54,7 +55,11 @@ class SentimentSpace:
         return self.vectorized_reviews
 
     def vectorized(self, labeled_review):
-        return tuple(self.sentiments_by_word[word] for word in labeled_review[0]), labeled_review[1]
+        return self.padded(tuple(self.sentiments_by_word[word] for word in labeled_review[0])), labeled_review[1]
+
+    def padded(self, review_vector):
+        diff_to_max = self.max_review_length - len(review_vector)
+        return review_vector + tuple(SentimentSpace.PADDING_VECTOR for _ in range(diff_to_max))
 
 
 def main():
