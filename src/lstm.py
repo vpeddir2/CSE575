@@ -8,6 +8,7 @@ import time
 import abc
 import torch
 from torch.utils.data import Dataset
+from torch import nn
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -15,6 +16,21 @@ NEGATIVE_LABEL = 'negative'
 VALID_CHARS = string.ascii_lowercase + string.digits + ' '
 INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
 LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
+
+
+class SentimentLSTM(nn.Module):
+    def __init__(self, input_dim=None, hidden_dim=50, output_dim=1):
+        super(SentimentLSTM, self).__init__()
+
+        if not input_dim:
+            raise Exception('Need number of input dimensions!')
+
+        self.lstm = nn.LSTM(input_dim, hidden_dim, batch_first=True)
+        self.output_layer = nn.Linear(hidden_dim, output_dim)
+
+    def forward(self, x):
+        lstm_out, (hidden_state, cell_state) = self.lstm(x)
+        return self.output_layer(hidden_state[-1])
 
 
 class MovieReviewsDataset(Dataset):
