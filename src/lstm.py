@@ -3,7 +3,7 @@
 import gzip
 import csv
 import string
-import array
+import numpy as np
 import time
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
@@ -23,7 +23,7 @@ class SentimentSpace:
     - a key identifying the word
     """
 
-    PADDING_VECTOR = array.array('I', [0, 0, 0])
+    PADDING_VECTOR = np.array([0, 0, 0], dtype=np.int)
 
     def __init__(self, labeled_reviews):
         self.sentiments_by_word = {}
@@ -37,7 +37,7 @@ class SentimentSpace:
         for review in self.labeled_reviews:
             for word in review[0]:
                 if word not in self.sentiments_by_word:
-                    self.sentiments_by_word[word] = array.array('I', [0, 0, self.word_key])
+                    self.sentiments_by_word[word] = np.array([0, 0, self.word_key], dtype=np.int)
                     self.word_key += 1
                 if review[1]:
                     self.sentiments_by_word[word][0] += 1
