@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-
+import abc
 import gzip
 import csv
 import string
 import numpy as np
 import time
+import abc
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -13,7 +14,51 @@ VALID_CHARS = string.ascii_lowercase + string.digits + ' '
 INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
 LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
 
-class SentimentSpace:
+
+class Space(abc.ABC):
+
+    def __init__(self, labeled_reviews):
+        self.labeled_reviews = labeled_reviews
+        self.training_reviews, self.testing_reviews = split_data(labeled_reviews)
+        self.max_review_length = len(max(labeled_reviews, key=lambda r: len(r[0]))[0])
+        self.vectorized_training_reviews = None
+        self.vectorized_testing_reviews = None
+
+    @property
+    def training_data(self):
+        if not self.vectorized_training_reviews:
+            self.vectorized_training_reviews = tuple(self.vectorized(review) for review in self.training_reviews)
+        return self.vectorized_training_reviews
+
+    def vectorized(self, review):
+        pass
+
+    @property
+    def testing_data(self):
+        if not self.vectorized_testing_reviews:
+            self.vectorized_testing_reviews = tuple(self.vectorized(review) for review in self.testing_reviews)
+        return self.vectorized_testing_reviews
+
+    def padded(self, review_vector, padding_vector):
+        diff_to_max = self.max_review_length - len(review_vector)
+        return review_vector + tuple(padding_vector for _ in range(diff_to_max))
+
+
+class KeyedWordSpace(Space):
+    """
+    Maps words to unique integer keys. The keys don't mean anything beyond that.
+    """
+
+    def __init__(self, labeled_reviews):
+        super().__init__(labeled_reviews)
+        all_words = set(word for review in labeled_reviews for word in review[0])
+        self.words_to_key = {word: i for i, word in enumerate(all_words)}
+
+    def vectorized(self, review):
+        return self.padded(tuple(self.words_to_key[word] for word in review[0]), -1), review[1]
+
+
+class SentimentSpace(Space):
     """
     Maps words to sentiment vectors. Each sentiment vector has three elements
     in the following order:
@@ -25,13 +70,9 @@ class SentimentSpace:
     PADDING_VECTOR = np.array([0, 0, 0], dtype=np.int)
 
     def __init__(self, labeled_reviews):
+        super().__init__(labeled_reviews)
         self.sentiments_by_word = {}
-        self.labeled_reviews = labeled_reviews
-        self.training_reviews, self.testing_reviews = split_data(labeled_reviews)
         self.word_key = 1
-        self.vectorized_training_reviews = None
-        self.vectorized_testing_reviews = None
-        self.max_review_length = len(max(labeled_reviews, key=lambda r: len(r[0]))[0])
         self.create_space()
 
     def create_space(self):
@@ -45,37 +86,19 @@ class SentimentSpace:
                 else:
                     self.sentiments_by_word[word][1] += 1
 
-    @property
-    def space(self):
-        return tuple(self.sentiments_by_word.values())
-
-    @property
-    def training_data(self):
-        if not self.vectorized_training_reviews:
-            self.vectorized_training_reviews = tuple(self.vectorized(review) for review in self.training_reviews)
-        return self.vectorized_training_reviews
-
     def vectorized(self, labeled_review):
-        return self.padded(tuple(self.sentiments_by_word[word] for word in labeled_review[0])), labeled_review[1]
-
-    def padded(self, review_vector):
-        diff_to_max = self.max_review_length - len(review_vector)
-        return review_vector + tuple(SentimentSpace.PADDING_VECTOR for _ in range(diff_to_max))
-
-    @property
-    def testing_data(self):
-        if not self.vectorized_testing_reviews:
-            self.vectorized_testing_reviews = tuple(self.vectorized(review) for review in self.testing_reviews)
-        return self.vectorized_testing_reviews
+        return self.padded(tuple(self.sentiments_by_word[word] for word in labeled_review[0]),
+                           SentimentSpace.PADDING_VECTOR), labeled_review[1]
 
 
 def main():
     start = time.perf_counter()
     all_alphanumeric_data = preprocess_data(read_csv(yield_all_data_lines()))
     print(time.perf_counter() - start)
-    sentiment_space = SentimentSpace(all_alphanumeric_data)
+    spaces = [SentimentSpace(all_alphanumeric_data), KeyedWordSpace(all_alphanumeric_data)]
     print(time.perf_counter() - start)
-    print(len(sentiment_space.training_data))
+    for space in spaces:
+        print(space.training_data[0])
 
 
 def yield_all_data_lines():
