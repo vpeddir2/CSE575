@@ -13,7 +13,6 @@ VALID_CHARS = string.ascii_lowercase + string.digits + ' '
 INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
 LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
 
-
 class SentimentSpace:
     """
     Maps words to sentiment vectors. Each sentiment vector has three elements
@@ -28,8 +27,10 @@ class SentimentSpace:
     def __init__(self, labeled_reviews):
         self.sentiments_by_word = {}
         self.labeled_reviews = labeled_reviews
+        self.training_reviews, self.testing_reviews = split_data(labeled_reviews)
         self.word_key = 1
-        self.vectorized_reviews = None
+        self.vectorized_training_reviews = None
+        self.vectorized_testing_reviews = None
         self.max_review_length = len(max(labeled_reviews, key=lambda r: len(r[0]))[0])
         self.create_space()
 
@@ -49,10 +50,10 @@ class SentimentSpace:
         return tuple(self.sentiments_by_word.values())
 
     @property
-    def reviews(self):
-        if not self.vectorized_reviews:
-            self.vectorized_reviews = tuple(self.vectorized(review) for review in self.labeled_reviews)
-        return self.vectorized_reviews
+    def training_data(self):
+        if not self.vectorized_training_reviews:
+            self.vectorized_training_reviews = tuple(self.vectorized(review) for review in self.training_reviews)
+        return self.vectorized_training_reviews
 
     def vectorized(self, labeled_review):
         return self.padded(tuple(self.sentiments_by_word[word] for word in labeled_review[0])), labeled_review[1]
@@ -61,16 +62,20 @@ class SentimentSpace:
         diff_to_max = self.max_review_length - len(review_vector)
         return review_vector + tuple(SentimentSpace.PADDING_VECTOR for _ in range(diff_to_max))
 
+    @property
+    def testing_data(self):
+        if not self.vectorized_testing_reviews:
+            self.vectorized_testing_reviews = tuple(self.vectorized(review) for review in self.testing_reviews)
+        return self.vectorized_testing_reviews
+
 
 def main():
     start = time.perf_counter()
     all_alphanumeric_data = preprocess_data(read_csv(yield_all_data_lines()))
-    training_data, testing_data = split_data(all_alphanumeric_data)
     print(time.perf_counter() - start)
-
-    sentiment_space = SentimentSpace(training_data)
+    sentiment_space = SentimentSpace(all_alphanumeric_data)
     print(time.perf_counter() - start)
-    print(len(sentiment_space.reviews))
+    print(len(sentiment_space.training_data))
 
 
 def yield_all_data_lines():
