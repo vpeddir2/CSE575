@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-import abc
+
 import gzip
 import csv
 import string
 import numpy as np
 import time
 import abc
+import torch
+from torch.utils.data import Dataset
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -13,6 +15,19 @@ NEGATIVE_LABEL = 'negative'
 VALID_CHARS = string.ascii_lowercase + string.digits + ' '
 INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
 LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
+
+
+class MovieReviewsDataset(Dataset):
+    def __init__(self, data):
+        self.data = data
+        self.inputs = torch.tensor([item[0] for item in data], dtype=torch.float)
+        self.labels = torch.tensor([item[1] for item in data], dtype=torch.float)
+
+    def __len__(self):
+        return len(self.data)
+
+    def __getitem__(self, idx):
+        return self.inputs[idx], self.labels[idx]
 
 
 class Space(abc.ABC):
