@@ -22,7 +22,7 @@ NUM_EMBEDDING_DIMENSIONS = 100
 NUM_HIDDEN_DIMENSIONS = 128
 NUM_OUTPUT_DIMENSIONS = 1
 BATCH_SIZE = 32
-NUM_EPOCHS = 3
+NUM_EPOCHS = 50
 
 
 class SentimentClassifier:
@@ -171,7 +171,7 @@ class SentimentSpace(Space):
     - a key identifying the word
     """
 
-    PADDING_VECTOR = np.array([0, 0, 0], dtype=np.int)
+    PADDING_VECTOR = np.array([0, 0, 0], dtype=np.int32)
 
     def __init__(self, labeled_reviews):
         super().__init__(labeled_reviews, padding_element=SentimentSpace.PADDING_VECTOR)
@@ -183,7 +183,7 @@ class SentimentSpace(Space):
         for review in self.labeled_reviews:
             for word in review[0]:
                 if word not in self.sentiments_by_word:
-                    self.sentiments_by_word[word] = np.array([0, 0, self.word_key], dtype=np.int)
+                    self.sentiments_by_word[word] = np.array([0, 0, self.word_key], dtype=np.int32)
                     self.word_key += 1
                 if review[1]:
                     self.sentiments_by_word[word][0] += 1
