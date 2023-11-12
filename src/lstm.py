@@ -6,6 +6,7 @@ import string
 import numpy as np
 import time
 import abc
+import argparse
 import torch
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
@@ -23,6 +24,8 @@ NUM_HIDDEN_DIMENSIONS = 128
 NUM_OUTPUT_DIMENSIONS = 1
 BATCH_SIZE = 32
 NUM_EPOCHS = 50
+USE_KEYED_FLAG = 'k'
+USE_SENTIMENT_FLAG = 's'
 
 
 class SentimentClassifier:
@@ -198,12 +201,21 @@ class SentimentSpace(Space):
 
 
 def main():
+    space_type = parse_args()
     start = time.perf_counter()
-    space = KeyedWordSpace(preprocess_data(read_csv(yield_all_data_lines())))
+    all_data = preprocess_data(read_csv(yield_all_data_lines()))
+    space = choose_space(all_data, space_type)
     print('vectorized data', time.perf_counter() - start)
     train_data, test_data = space.all_data
     classifier = SentimentClassifier(train_data, test_data, space.size() + 1, space.padding_element)
     classifier.train_and_evaluate()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s', '--space', choices=[USE_KEYED_FLAG, USE_SENTIMENT_FLAG], default='k')
+    args = parser.parse_args()
+    return args.space
 
 
 def yield_all_data_lines():
@@ -268,6 +280,15 @@ def compose(fns, data):
     if len(fns) == 1:
         return fns[0](data)
     return compose(fns[1:], fns[0](data))
+
+
+def choose_space(all_data, space_type):
+    if space_type is USE_SENTIMENT_FLAG:
+        print('Using sentiment-based space')
+        return SentimentSpace(all_data)
+    else:
+        print('Using key-based space')
+        return KeyedWordSpace(all_data)
 
 
 def split_data(all_data):
