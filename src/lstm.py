@@ -30,7 +30,7 @@ USE_SENTIMENT_FLAG = 's'
 
 class SentimentClassifier:
 
-    def __init__(self, train_data, test_data, vocab_size, padding_element=0):
+    def __init__(self, train_data, test_data, vocab_size, padding_element=0.0):
         self.padding_element = padding_element
         self.train_dataset = MovieReviewsDataset(train_data)
         self.train_loader = DataLoader(self.train_dataset, batch_size=BATCH_SIZE, shuffle=True,
@@ -38,13 +38,14 @@ class SentimentClassifier:
         self.test_dataset = MovieReviewsDataset(test_data)
         self.test_loader = DataLoader(self.test_dataset, batch_size=BATCH_SIZE, shuffle=False,
                                       collate_fn=self.collate_fn)
-        self.lstm = SentimentLSTM(vocab_size, NUM_EMBEDDING_DIMENSIONS, NUM_HIDDEN_DIMENSIONS, NUM_OUTPUT_DIMENSIONS)
+        self.lstm = SentimentLSTM(vocab_size, embedding_dim=vocab_size - 1, hidden_dim=NUM_HIDDEN_DIMENSIONS,
+                                  output_dim=NUM_OUTPUT_DIMENSIONS)
         self.criterion = nn.BCEWithLogitsLoss()
         self.optimizer = optim.Adam(self.lstm.parameters())
 
     def collate_fn(self, batch):
         reviews, labels = zip(*batch)
-        reviews_padded = pad_sequence(reviews, batch_first=True, padding_value=self.padding_element)
+        reviews_padded = pad_sequence(reviews, batch_first=True, padding_value=0.0)
         labels = torch.tensor(labels, dtype=torch.float)
         return reviews_padded, labels
 
@@ -98,7 +99,7 @@ class SentimentLSTM(nn.Module):
 
 class MovieReviewsDataset(Dataset):
     def __init__(self, reviews):
-        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.long) for review in reviews]
+        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.float) for review in reviews]
         self.labels = torch.tensor([review[1] for review in reviews], dtype=torch.float)
 
     def __len__(self):
@@ -108,112 +109,19 @@ class MovieReviewsDataset(Dataset):
         return self.reviews[idx], self.labels[idx]
 
 
-class Space(abc.ABC):
-
-    def __init__(self, labeled_reviews, padding_element=None):
-        self.labeled_reviews = labeled_reviews
-        self.training_reviews, self.testing_reviews = split_data(labeled_reviews)
-        self.vectorized_training_reviews = None
-        self.vectorized_testing_reviews = None
-        self.padding = padding_element
-
-    @property
-    def training_data(self):
-        if not self.vectorized_training_reviews:
-            self.vectorized_training_reviews = tuple(self.vectorized(review) for review in self.training_reviews)
-        return self.vectorized_training_reviews
-
-    def vectorized(self, review):
-        pass
-
-    @property
-    def testing_data(self):
-        if not self.vectorized_testing_reviews:
-            self.vectorized_testing_reviews = tuple(self.vectorized(review) for review in self.testing_reviews)
-        return self.vectorized_testing_reviews
-
-    @property
-    def size(self):
-        raise NotImplementedError('Space size function not given!')
-
-    @property
-    def all_data(self):
-        return self.training_data, self.testing_data
-
-    @property
-    def padding_element(self):
-        if self.padding is None:
-            raise NotImplementedError('No padding element given!')
-        else:
-            return self.padding
-
-
-class KeyedWordSpace(Space):
-    """
-    Maps words to unique integer keys. The keys don't mean anything beyond that.
-    """
-
-    def __init__(self, labeled_reviews):
-        super().__init__(labeled_reviews, padding_element=0)
-        all_words = set(word for review in labeled_reviews for word in review[0])
-        self.words_to_key = {word: i + 1 for i, word in enumerate(all_words)}
-
-    def vectorized(self, review):
-        return tuple(self.words_to_key[word] for word in review[0]), review[1]
-
-    def size(self):
-        return max(v for k, v in self.words_to_key.items())
-
-
-class SentimentSpace(Space):
-    """
-    Maps words to sentiment vectors. Each sentiment vector has three elements
-    in the following order:
-    - a count of positive reviews the word is in
-    - a count of negative reviews the word is in
-    - a key identifying the word
-    """
-
-    PADDING_VECTOR = np.array([0, 0, 0], dtype=np.int32)
-
-    def __init__(self, labeled_reviews):
-        super().__init__(labeled_reviews, padding_element=SentimentSpace.PADDING_VECTOR)
-        self.sentiments_by_word = {}
-        self.word_key = 1
-        self.create_space()
-
-    def create_space(self):
-        for review in self.labeled_reviews:
-            for word in review[0]:
-                if word not in self.sentiments_by_word:
-                    self.sentiments_by_word[word] = np.array([0, 0, self.word_key], dtype=np.int32)
-                    self.word_key += 1
-                if review[1]:
-                    self.sentiments_by_word[word][0] += 1
-                else:
-                    self.sentiments_by_word[word][1] += 1
-
-    def vectorized(self, labeled_review):
-        return tuple(self.sentiments_by_word[word] for word in labeled_review[0]), labeled_review[1]
-
-    def size(self):
-        return self.word_key
-
-
 def main():
     space_type = parse_args()
     start = time.perf_counter()
-    all_data = preprocess_data(read_csv(yield_all_data_lines()))
-    space = choose_space(all_data, space_type)
+    train_data, test_data, size = vectorize(preprocess_data(read_csv(yield_all_data_lines())),
+                                            choose_space(space_type))
     print('vectorized data', time.perf_counter() - start)
-    train_data, test_data = space.all_data
-    classifier = SentimentClassifier(train_data, test_data, space.size() + 1, space.padding_element)
+    classifier = SentimentClassifier(train_data, test_data, size)
     classifier.train_and_evaluate()
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--space', choices=[USE_KEYED_FLAG, USE_SENTIMENT_FLAG], default='k')
+    parser.add_argument('-s', '--space', choices=[USE_KEYED_FLAG, USE_SENTIMENT_FLAG], default='s')
     args = parser.parse_args()
     return args.space
 
@@ -282,13 +190,46 @@ def compose(fns, data):
     return compose(fns[1:], fns[0](data))
 
 
-def choose_space(all_data, space_type):
+def choose_space(space_type):
     if space_type is USE_SENTIMENT_FLAG:
         print('Using sentiment-based space')
-        return SentimentSpace(all_data)
+        return to_sentiment_score_vectors
     else:
         print('Using key-based space')
-        return KeyedWordSpace(all_data)
+        return to_key_number_vectors
+
+
+def to_sentiment_score_vectors(labeled_reviews):
+    counts_by_word = count_word_frequencies(labeled_reviews)
+    words_to_key = {word: (counts[0] - counts[1] / (counts[0] + counts[1])) for word, counts in counts_by_word.items()}
+    vectorized_data = tuple((tuple(words_to_key[word] for word in review[0]), review[1]) for review in labeled_reviews)
+    training_data, test_data = split_data(vectorized_data)
+    return training_data, test_data, len(counts_by_word)
+
+
+def count_word_frequencies(labeled_reviews):
+    result = {}
+    for review in labeled_reviews:
+        for word in review[0]:
+            if word not in result:
+                result[word] = np.array([0, 0], dtype=np.int32)
+            if review[1]:
+                result[word][0] += 1
+            else:
+                result[word][1] += 1
+    return result
+
+
+def to_key_number_vectors(labeled_reviews):
+    all_words = set(word for review in labeled_reviews for word in review[0])
+    words_to_key = {word: i + 1 for i, word in enumerate(all_words)}
+    vectorized_data = tuple((tuple(words_to_key[word] for word in review[0]), review[1]) for review in labeled_reviews)
+    training_data, test_data = split_data(vectorized_data)
+    return training_data, test_data, len(all_words)
+
+
+def vectorize(labeled_reviews, to_vectors):
+    return to_vectors(labeled_reviews)
 
 
 def split_data(all_data):
