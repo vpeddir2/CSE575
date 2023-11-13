@@ -2,10 +2,10 @@
 
 import gzip
 import csv
+import itertools
 import string
 import numpy as np
 import time
-import abc
 import argparse
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -19,7 +19,7 @@ NEGATIVE_LABEL = 'negative'
 VALID_CHARS = string.ascii_lowercase + string.digits + ' '
 INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
 LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
-NUM_EMBEDDING_DIMENSIONS = 100
+NUM_EMBEDDING_DIMENSIONS = 50
 NUM_HIDDEN_DIMENSIONS = 128
 NUM_OUTPUT_DIMENSIONS = 1
 BATCH_SIZE = 32
@@ -38,7 +38,7 @@ class SentimentClassifier:
         self.test_dataset = MovieReviewsDataset(test_data)
         self.test_loader = DataLoader(self.test_dataset, batch_size=BATCH_SIZE, shuffle=False,
                                       collate_fn=self.collate_fn)
-        self.lstm = SentimentLSTM(vocab_size, embedding_dim=vocab_size - 1, hidden_dim=NUM_HIDDEN_DIMENSIONS,
+        self.lstm = SentimentLSTM(vocab_size, embedding_dim=NUM_EMBEDDING_DIMENSIONS, hidden_dim=NUM_HIDDEN_DIMENSIONS,
                                   output_dim=NUM_OUTPUT_DIMENSIONS)
         self.criterion = nn.BCEWithLogitsLoss()
         self.optimizer = optim.Adam(self.lstm.parameters())
@@ -87,7 +87,7 @@ class SentimentClassifier:
 class SentimentLSTM(nn.Module):
     def __init__(self, vocab_size, embedding_dim, hidden_dim, output_dim=1):
         super(SentimentLSTM, self).__init__()
-        self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=0)
+        self.embedding = nn.Embedding(num_embeddings=vocab_size + 1, embedding_dim=embedding_dim, padding_idx=0)
         self.lstm = nn.LSTM(embedding_dim, hidden_dim, batch_first=True)
         self.output_layer = nn.Linear(hidden_dim, output_dim)
 
@@ -99,7 +99,7 @@ class SentimentLSTM(nn.Module):
 
 class MovieReviewsDataset(Dataset):
     def __init__(self, reviews):
-        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.float) for review in reviews]
+        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.long) for review in reviews]
         self.labels = torch.tensor([review[1] for review in reviews], dtype=torch.float)
 
     def __len__(self):
@@ -110,9 +110,9 @@ class MovieReviewsDataset(Dataset):
 
 
 def main():
-    space_type = parse_args()
+    space_type, num_of_records = parse_args()
     start = time.perf_counter()
-    train_data, test_data, size = vectorize(preprocess_data(read_csv(yield_all_data_lines())),
+    train_data, test_data, size = vectorize(preprocess_data(read_csv(yield_all_data_lines(), num_of_records)),
                                             choose_space(space_type))
     print('vectorized data', time.perf_counter() - start)
     classifier = SentimentClassifier(train_data, test_data, size)
@@ -121,9 +121,11 @@ def main():
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-s', '--space', choices=[USE_KEYED_FLAG, USE_SENTIMENT_FLAG], default='s')
+    parser.add_argument('-s', '--space', choices=[USE_KEYED_FLAG, USE_SENTIMENT_FLAG], default=USE_KEYED_FLAG)
+    parser.add_argument('-n', '--num_of_records', type=int, default=-1,
+                        help="The number of records to read from file. Defaults to all.")
     args = parser.parse_args()
-    return args.space
+    return args.space, args.num_of_records
 
 
 def yield_all_data_lines():
@@ -132,9 +134,12 @@ def yield_all_data_lines():
             yield line
 
 
-def read_csv(lines):
+def read_csv(lines, num_of_records):
     reader = csv.reader(line for line in lines)
-    return (row for row in reader)
+    if num_of_records > 0:
+        return itertools.islice((row for row in reader), num_of_records)
+    else:
+        return (row for row in reader)
 
 
 def preprocess_data(data):
