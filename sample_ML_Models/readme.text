@@ -1,6 +1,6 @@
 In this folder there is a
 1. sample preprocessed csv file of our IMDB data set.
-2. Applied sample vectorizing technique CountVectorizer().
+2. Sample code
 
 Inorder to give our input to ML model, to get itself trained. We need to Vectorize our input text 'review' column, for this we can use any of the vectorizer. We also need to do the 
 label encoding to our 'sentiment' column.
