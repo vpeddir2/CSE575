@@ -1,0 +1,11 @@
+In this folder there is a
+1. sample preprocessed csv file of our IMDB data set.
+2. Applied sample vectorizing technique CountVectorizer().
+
+Inorder to give our input to ML model, to get itself trained. We need to Vectorize our input text 'review' column, for this we can use any of the vectorizer. We also need to do the 
+label encoding to our 'sentiment' column.
+
+Do the train test split and feed it to our model.
+For Naive Bayes and Logistic Regression I used 80% of the training data, but for SVM I used only 30%of the training data as SVM takes lot of time to execute.
+
+Naive Bayes gave 85.93% , LogisticRegression gave 89% and linear SVM gave 85% even with only 30% of the training data
