@@ -5,13 +5,18 @@ import csv
 import itertools
 import string
 import numpy as np
+import pandas as pd
 import time
 import argparse
 import torch
+import re
+import emoji
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
+from textblob import TextBlob
+from nltk.corpus import stopwords
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -148,6 +153,13 @@ def preprocess_data(data):
         labels_to_bools,
         to_lowercase,
         to_alphanumeric_words,
+        remove_html_tags,
+        remove_url,
+        remove_punc,
+        chat_word_conversion,
+        correct_text,
+        stop_words_removal,
+        replace_emoji,
         to_word_tuples,
     ]
     return tuple(row for row in compose(processors, data))
@@ -182,6 +194,63 @@ def to_alphanumeric_words(data):
 def to_alphanum_chars(text):
     return ''.join([c for c in text if c in VALID_CHARS])
 
+
+def remove_html_tags(data):
+    for d in data:
+        pattern = re.compile('<.*?>')
+        d[0] = pattern.sub(r'', d[0])
+        yield d
+
+def remove_url(data):
+    for d in data:
+        pattern = re.compile(r'https?://\S+|www\.\S+')
+        d[0]=pattern.sub(r'', d[0])
+        yield d
+
+def remove_punc(data):
+    for d in data:
+        exclude =  string.punctuation
+        for ch in exclude:
+            d[0] = d[0].replace(ch,'')
+        yield d
+
+def chat_word_conversion(data):
+    url = "https://raw.githubusercontent.com/MFuchs1989/Datasets-and-Miscellaneous/main/datasets/NLP/Text%20Pre-Processing%20VII%20(Special%20Cases)/chat_expressions.csv" 
+    chat_expressions = pd.read_csv(url, error_bad_lines=False)
+    chat_words = dict(zip(chat_expressions.Chat_Words, chat_expressions.Chat_Words_Extended))
+    for d in data:
+        new_text = []
+        for w in d[0].split():
+            if w.upper() in chat_words:
+                new_text.append(chat_words[w.upper()])
+            else:
+                new_text.append(w)
+        d[0] = " ".join(new_text)        
+        yield d 
+
+def correct_text(data):
+    for d in data:
+        textBlb = TextBlob(d[0])
+        d[0]=textBlb.correct().string
+        yield d 
+
+def stop_words_removal(data):
+    for d in data:
+        new_text = []
+        for word in d[0].split():
+             if word in stopwords.words('english'):
+                new_text.append('')
+             else:
+                new_text.append(word)
+        x = new_text[:]
+        new_text.clear()
+        d[0] = " ".join(x)
+        yield d
+
+def replace_emoji(data):
+    for d in data:
+        d[0]=emoji.demojize(d[0])
+        yield d 
 
 def to_word_tuples(data):
     for d in data:
