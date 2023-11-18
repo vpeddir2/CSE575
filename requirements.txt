@@ -1,0 +1,12 @@
+bs4
+ipython
+jupyter
+matplotlib
+numpy
+pandas
+scikit-learn
+scipy
+seaborn
+torch
+textblob
+emoji
