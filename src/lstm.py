@@ -208,7 +208,7 @@ def choose_space(space_type):
 def to_sentiment_score_vectors(labeled_reviews):
     reviews = tuple(' '.join(review[0]) for review in labeled_reviews)
     labels = tuple(review[1] for review in labeled_reviews)
-    vectorizer = TfidfVectorizer()
+    vectorizer = TfidfVectorizer(dtype=np.float32)
     vectorized_reviews = vectorizer.fit_transform(reviews).toarray()
     vectorized_data = tuple((review, label) for review, label in zip(vectorized_reviews, labels))
     training_data, test_data = split_data(vectorized_data)
