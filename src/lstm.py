@@ -8,6 +8,8 @@ import numpy as np
 import time
 import argparse
 import torch
+import random
+from collections import OrderedDict
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch.optim as optim
@@ -100,7 +102,7 @@ class SentimentLSTM(nn.Module):
 
 class MovieReviewsDataset(Dataset):
     def __init__(self, reviews):
-        self.reviews = [torch.tensor(review[0], dtype=torch.long) for review in reviews]
+        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.long) for review in reviews]
         self.labels = torch.tensor([review[1] for review in reviews], dtype=torch.float)
 
     def __len__(self):
@@ -199,20 +201,19 @@ def compose(fns, data):
 def choose_space(space_type):
     if space_type is USE_SENTIMENT_FLAG:
         print('Using sentiment-based space')
-        return to_sentiment_score_vectors
+        return to_ordered_sentiment_indexes
     else:
         print('Using key-based space')
         return to_key_number_vectors
 
 
-def to_sentiment_score_vectors(labeled_reviews):
-    reviews = tuple(' '.join(review[0]) for review in labeled_reviews)
-    labels = tuple(review[1] for review in labeled_reviews)
-    vectorizer = HashingVectorizer(dtype=np.float32)
-    vectorized_reviews = vectorizer.fit_transform(reviews).toarray()
-    vectorized_data = tuple((review, label) for review, label in zip(vectorized_reviews, labels))
+def to_ordered_sentiment_indexes(labeled_reviews):
+    counts_by_word = count_word_frequencies(labeled_reviews)
+    words_to_key = to_keys_by_word(counts_by_word)
+    # print(len(set(words_to_key.values())), len(set(word for review in labeled_reviews for word in review[0])))
+    vectorized_data = tuple((tuple(words_to_key[word] for word in review[0]), review[1]) for review in labeled_reviews)
     training_data, test_data = split_data(vectorized_data)
-    return training_data, test_data, len(vectorized_reviews[0])
+    return training_data, test_data, len(words_to_key)
 
 
 def count_word_frequencies(labeled_reviews):
@@ -227,6 +228,14 @@ def count_word_frequencies(labeled_reviews):
                 result[word][1] += 1
     return result
 
+def to_keys_by_word(counts_by_word):
+    scores_by_word = {}
+    for i, word in enumerate(counts_by_word):
+        counts = counts_by_word[word]
+        sentiment = counts[0]-counts[1] / (counts[0]+counts[1])
+        scores_by_word[word] = sentiment
+    scores_ordered =OrderedDict(sorted(scores_by_word.items(), key=lambda x: x[1]))
+    return {word: i+1 for i, word in enumerate(scores_ordered)}
 
 def to_key_number_vectors(labeled_reviews):
     all_words = set(word for review in labeled_reviews for word in review[0])
@@ -242,7 +251,8 @@ def vectorize(labeled_reviews, to_vectors):
 
 def split_data(all_data):
     cutoff = len(all_data) // 2
-    return [all_data[:cutoff], all_data[cutoff:]]
+    data = random.sample(all_data, len(all_data))
+    return [data[:cutoff], data[cutoff:]]
 
 
 if __name__ == '__main__':
