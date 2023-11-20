@@ -12,6 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
+from sklearn.feature_extraction.text import TfidfVectorizer
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -99,7 +100,7 @@ class SentimentLSTM(nn.Module):
 
 class MovieReviewsDataset(Dataset):
     def __init__(self, reviews):
-        self.reviews = [torch.tensor(np.array(review[0]), dtype=torch.long) for review in reviews]
+        self.reviews = [torch.tensor(review[0], dtype=torch.long) for review in reviews]
         self.labels = torch.tensor([review[1] for review in reviews], dtype=torch.float)
 
     def __len__(self):
@@ -205,12 +206,13 @@ def choose_space(space_type):
 
 
 def to_sentiment_score_vectors(labeled_reviews):
-    counts_by_word = count_word_frequencies(labeled_reviews)
-    all_words = set(word for review in labeled_reviews for word in review[0])
-    words_to_key = {word: i + 1 for i, word in enumerate(all_words)}
-    vectorized_data = tuple((tuple((counts_by_word[word][0], counts_by_word[word][1], words_to_key[word]) for word in review[0]), review[1]) for review in labeled_reviews)
+    reviews = tuple(' '.join(review[0]) for review in labeled_reviews)
+    labels = tuple(review[1] for review in labeled_reviews)
+    vectorizer = TfidfVectorizer()
+    vectorized_reviews = vectorizer.fit_transform(reviews).toarray()
+    vectorized_data = tuple((review, label) for review, label in zip(vectorized_reviews, labels))
     training_data, test_data = split_data(vectorized_data)
-    return training_data, test_data, len(counts_by_word)
+    return training_data, test_data, len(vectorized_reviews[0])
 
 
 def count_word_frequencies(labeled_reviews):
