@@ -206,8 +206,9 @@ def choose_space(space_type):
 
 def to_sentiment_score_vectors(labeled_reviews):
     counts_by_word = count_word_frequencies(labeled_reviews)
-    words_to_key = {word: (counts[0] - counts[1] / (counts[0] + counts[1])) for word, counts in counts_by_word.items()}
-    vectorized_data = tuple((tuple(words_to_key[word] for word in review[0]), review[1]) for review in labeled_reviews)
+    all_words = set(word for review in labeled_reviews for word in review[0])
+    words_to_key = {word: i + 1 for i, word in enumerate(all_words)}
+    vectorized_data = tuple((tuple((counts_by_word[word][0], counts_by_word[word][1], words_to_key[word]) for word in review[0]), review[1]) for review in labeled_reviews)
     training_data, test_data = split_data(vectorized_data)
     return training_data, test_data, len(counts_by_word)
 
