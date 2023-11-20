@@ -12,7 +12,7 @@ from torch.utils.data import Dataset, DataLoader
 from torch import nn
 import torch.optim as optim
 from torch.nn.utils.rnn import pad_sequence
-from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.feature_extraction.text import TfidfVectorizer, HashingVectorizer
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 POSITIVE_LABEL = 'positive'
@@ -208,7 +208,7 @@ def choose_space(space_type):
 def to_sentiment_score_vectors(labeled_reviews):
     reviews = tuple(' '.join(review[0]) for review in labeled_reviews)
     labels = tuple(review[1] for review in labeled_reviews)
-    vectorizer = TfidfVectorizer(dtype=np.float32)
+    vectorizer = HashingVectorizer(dtype=np.float32)
     vectorized_reviews = vectorizer.fit_transform(reviews).toarray()
     vectorized_data = tuple((review, label) for review, label in zip(vectorized_reviews, labels))
     training_data, test_data = split_data(vectorized_data)
