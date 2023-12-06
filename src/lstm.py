@@ -11,17 +11,16 @@ import argparse
 import re
 import torch
 import random
-# import nltk
-# nltk.download('stopwords')
-# nltk.download('wordnet')
-# nltk.download('omw-1.4')
-# nltk.download('punkt')
-# nltk.download('averaged_perceptron_tagger')
-# from nltk.stem import WordNetLemmatizer
-# from nltk.corpus import stopwords, wordnet
-# from nltk.tokenize import word_tokenize
-# from nltk.tag import pos_tag
-from tqdm import tqdm
+import nltk
+nltk.download('stopwords')
+nltk.download('wordnet')
+nltk.download('omw-1.4')
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import stopwords, wordnet
+from nltk.tokenize import word_tokenize
+from nltk.tag import pos_tag
 from collections import OrderedDict
 from torch.utils.data import Dataset, DataLoader
 from torch import nn
@@ -31,6 +30,8 @@ from torch.nn.utils.rnn import pad_sequence
 
 DATA_PATH = '../data/imdb-dataset.csv.gz'
 
+print('GPU available: ', torch.cuda.is_available())
+
 class Preprocessor:
 
     POSITIVE_LABEL = 'positive'
@@ -38,27 +39,26 @@ class Preprocessor:
     VALID_CHARS = string.ascii_lowercase + string.digits + ' '
     INVALID_CHARS = set(string.printable).difference(VALID_CHARS)
     LOWERCASE_TRANSLATOR = str.maketrans({c: '' for c in INVALID_CHARS})
+    HTML_TAG = re.compile('<.*?>')
+    URL = re.compile(r'https?://\S+|www\.\S+')
 
     def __init__(self):
-        pass
-        # self.lm = WordNetLemmatizer()
-        # self.pos_dict = {'A': wordnet.ADJ, 'N': wordnet.NOUN, 'R': wordnet.ADV, 'V': wordnet.VERB}
-        # self.stop_words = stopwords.words('english')
-        # self.stop_words.remove('not')
+        self.lm = WordNetLemmatizer()
+        self.pos_dict = {'A': wordnet.ADJ, 'N': wordnet.NOUN, 'R': wordnet.ADV, 'V': wordnet.VERB}
+        self.stop_words = stopwords.words('english')
+        self.stop_words.remove('not')
 
     def preprocess_data(self, data):
         processors = [
             # self.verify_labels,
             self.labels_to_bools,
-            self.expand_contractions,
-            self.to_lowercase,
-            self.remove_html_tags,
+            self.remove_stopwords_and_lemmatize,
             self.remove_urls,
-            # self.remove_stopwords_and_lemmatize,
-            self.remove_all_special_chars,
-            self.to_tuples
+            self.expand_contractions,
+            self.to_alphanumeric_words,
+            self.to_lowercase,
         ]
-        return tuple(row for row in self.compose(processors, data))
+        return tuple(self.to_tuple(row) for row in self.compose(processors, data))
 
 
     def labels_to_bools(self, data):
@@ -72,50 +72,40 @@ class Preprocessor:
             d[0] = d[0].lower()
             yield d
 
-    def remove_html_tags(self, data):
-        for d in data:
-            d[0] = d[0].replace('<br /><br />', ' ').replace('\x85', ' ').replace('\x96', ' ')
-            yield d
-
     def expand_contractions(self, data):
         for d in data:
-            d[0] = d[0].replace('n\'t', ' not').replace('\'ve', ' have').replace('\'ll', ' will').replace('\'em', ' them')
+            d[0] = d[0].replace('n\'t', ' not').replace('\'ve', ' have').replace('\'ll', ' will').replace('\'em', ' them').replace('\'m', ' am')
             yield d
             
     def remove_urls(self, data):
         for d in data:
-            pattern = re.compile(r'https?://\S+|www\.\S+')
-            d[0]=pattern.sub(r'', d[0])
+            d[0] = Preprocessor.URL.sub(r'', d[0])
             yield d
 
-    # def remove_stopwords_and_lemmatize(self, data):
-    #     for d in tqdm(data):
-    #         updated_pos = []
-    #         sentence = ''
-    #         pos_text = pos_tag(word_tokenize(d[0]))
-
-    #         for word, tag in pos_text:
-    #             if word.lower() not in self.stop_words:
-    #                 updated_pos.append((word, self.pos_dict.get(tag[0].upper(), wordnet.NOUN)))
-
-    #         for word, tag in updated_pos:
-    #             if not tag:
-    #                 sentence += ' ' + word
-    #             else:
-    #                 sentence += ' ' + self.lm.lemmatize(word, tag)
-
-    #         d[0] = sentence.strip()
-    #         yield d
-            
-    def remove_all_special_chars(self, data):
+    def remove_stopwords_and_lemmatize(self, data):
         for d in data:
-            d[0] = re.sub(r'\s[a-z]\s', ' ', re.sub('[^a-z\s]', '', d[0]))
+            d[0] = re.sub(Preprocessor.HTML_TAG, '', d[0])
+            pos_text = pos_tag(word_tokenize(d[0]))
+            updated_pos = tuple((word, self.pos_dict.get(tag[0].upper(), wordnet.NOUN)) for word, tag in pos_text if word.lower() not in self.stop_words)
+            sentence = ' '.join(word if not tag else self.lm.lemmatize(word, tag) for word, tag in updated_pos)
+
+            d[0] = sentence.strip()
             yield d
+
+    def to_alphanumeric_words(self, data):
+        for d in data:
+            d[0] = d[0].translate(Preprocessor.LOWERCASE_TRANSLATOR)
+            yield d
+
 
     def to_tuples(self, data):
         for d in data:
             d[0] = tuple(d[0].split(' '))
             yield d
+
+    def to_tuple(self, row):
+        row[0] = tuple(row[0].split(' '))
+        return row
 
     def compose(self, fns, data):
         if len(fns) == 1:
@@ -162,7 +152,7 @@ class LSTMVectorizer:
                     result[word][1] += 1
         return result
 
-    def to_keys_by_word(counts_by_word):
+    def to_keys_by_word(self, counts_by_word):
         scores_by_word = {}
         for word in counts_by_word:
             counts = counts_by_word[word]
@@ -215,8 +205,8 @@ class LSTMSentimentClassifier:
             print('Starting epoch ' + str(epoch + 1))
             start = time.perf_counter()
             self.train()
-            avg_val_loss, avg_val_accuracy = self.evaluate()
-            print(f"Epoch: {epoch + 1}, Validation loss: {avg_val_loss}, Validation accuracy: {avg_val_accuracy}",
+            test_avg_loss, test_accuracy, train_avg_loss, train_accuracy = self.evaluate()
+            print(f"Epoch: {epoch + 1}, Test validation loss: {test_avg_loss}, Test validation accuracy: {test_accuracy}, Train validation loss: {train_avg_loss}, Train accuracy: {train_accuracy}",
                   str(time.perf_counter() - start) + 's')
 
     def train(self):
@@ -230,19 +220,25 @@ class LSTMSentimentClassifier:
 
     def evaluate(self):
         self.lstm.eval()
+        test_avg_loss, test_accuracy = self.evaluate_data(self.test_loader, self.test_dataset)
+        train_avg_loss, train_accuracy = self.evaluate_data(self.train_loader, self.train_dataset)
+        return test_avg_loss, test_accuracy, train_avg_loss, train_accuracy
+
+    def evaluate_data(self, data_loader, dataset):
         total_eval_loss = 0
         total_eval_accuracy = 0
         with torch.no_grad():
-            for inputs, labels in self.test_loader:
+            for inputs, labels in data_loader:
                 outputs = self.lstm(inputs)
                 loss = self.criterion(outputs.squeeze(), labels)
                 total_eval_loss += loss.item()
                 preds = torch.round(torch.sigmoid(outputs.squeeze()))
                 total_eval_accuracy += torch.sum(preds == labels).item()
 
-        avg_val_loss = total_eval_loss / len(self.test_loader)
-        avg_val_accuracy = total_eval_accuracy / len(self.test_dataset)
+        avg_val_loss = total_eval_loss / len(data_loader)
+        avg_val_accuracy = total_eval_accuracy / len(dataset)
         return avg_val_loss, avg_val_accuracy
+
 
 
 class SentimentLSTM(nn.Module):
@@ -274,8 +270,11 @@ def main():
     space_type, num_of_records = parse_args()
     start = time.perf_counter()
     preprocessor = Preprocessor()
-    classifier = LSTMVectorizer(data=preprocessor.preprocess_data(read_csv(yield_all_data_lines(), num_of_records)))
-    train_data, test_data, size = classifier.vectorize(space_type)
+    print('Reading and preprocessing data.', time.perf_counter() - start)
+    vectorizer = LSTMVectorizer(data=preprocessor.preprocess_data(read_csv(yield_all_data_lines(), num_of_records)))
+    print('Vectorizing data.', time.perf_counter() - start)
+    train_data, test_data, size = vectorizer.vectorize(space_type)
+    print('Data vectorized.', time.perf_counter() - start)
     classifier = LSTMSentimentClassifier(train_data, test_data, size)
     classifier.train_and_evaluate()
     print(time.perf_counter() - start)
